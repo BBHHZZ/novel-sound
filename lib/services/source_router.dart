@@ -70,10 +70,7 @@ enum SourceGroup {
 /// configuration from the network or from disk; callers (tests, later steps)
 /// construct a config and hand it to [SourceRouter].
 class SourceRouterConfig {
-  const SourceRouterConfig({
-    Map<SourceGroup, SourceBackend> backends = const {},
-    this.remoteBaseUrl,
-  }) : _backends = backends;
+  const SourceRouterConfig({this._backends = const {}, this.remoteBaseUrl});
 
   /// Every group on the local core - the shipping default for A1.
   const SourceRouterConfig.allLocal()
@@ -94,9 +91,7 @@ class SourceRouterConfig {
 
 /// Classifies request paths and resolves them to a backend.
 class SourceRouter {
-  SourceRouter({
-    SourceRouterConfig config = const SourceRouterConfig.allLocal(),
-  }) : _config = config;
+  SourceRouter({this._config = const SourceRouterConfig.allLocal()});
 
   final SourceRouterConfig _config;
 
