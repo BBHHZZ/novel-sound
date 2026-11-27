@@ -1,0 +1,123 @@
+name: Rust service
+
+on:
+  pull_request:
+    paths: &service_paths
+      - 'rust/**'
+      - 'native/**'
+      - 'assets/config/**'
+      - 'scripts/ci_service_smoke.py'
+      - '.github/workflows/rust-service.yml'
+  push:
+    branches: [master]
+    paths: *service_paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-service-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  service:
+    name: Service boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Name artifacts by commit
+        id: naming
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust 1.99.1
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+
+      - name: Check focused service formatting
+        run: |
+          rustfmt --check --edition 2021 \
+            rust/src/service.rs \
+            rust/src/bin/fqapi_server.rs \
+            rust/tests/service_boundary.rs \
+            rust/tests/service_boot.rs
+
+      - name: Run service boundary and boot tests
+        run: cargo test --manifest-path rust/Cargo.toml --locked --no-default-features --features service --test service_boundary --test service_boot
+
+      - name: Build locked release service
+        run: cargo build --manifest-path rust/Cargo.toml --locked --release --no-default-features --features service --bin fqapi_server
+
+      - name: Run HTTPS service smoke test
+        run: python3 scripts/ci_service_smoke.py --binary target/release/fqapi_server --evidence build/ci-artifacts/service-smoke.json
+
+      - name: Stage release artifact
+        run: |
+          mkdir -p build/ci-artifacts
+          install -m 0755 target/release/fqapi_server build/ci-artifacts/fqapi_server
+          cd build/ci-artifacts
+          sha256sum fqapi_server service-smoke.json > SHA256SUMS
+
+      - name: Upload service artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-service-${{ steps.naming.outputs.short_sha }}
+          path: build/ci-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-service-failure-${{ steps.naming.outputs.short_sha }}
+          path: build/ci-artifacts/service-smoke.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  windows-build:
+    name: Windows service artifact
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Name artifacts by commit
+        id: naming
+        shell: bash
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust 1.99.1
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: '1.99.1'
+
+      - name: Build locked release service
+        run: cargo build --manifest-path rust/Cargo.toml --locked --release --no-default-features --features service --bin fqapi_server
+
+      - name: Stage Windows artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/ci-artifacts | Out-Null
+          Copy-Item target/release/fqapi_server.exe build/ci-artifacts/fqapi_server.exe
+          $hash = (Get-FileHash build/ci-artifacts/fqapi_server.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  fqapi_server.exe" | Set-Content -Encoding ascii build/ci-artifacts/SHA256SUMS
+
+      - name: Upload Windows service artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-service-windows-${{ steps.naming.outputs.short_sha }}
+          path: build/ci-artifacts/
+          if-no-files-found: error
+          retention-days: 14
