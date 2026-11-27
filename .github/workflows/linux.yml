@@ -86,7 +86,7 @@ jobs:
           mkdir -p build/validation/linux
           flutter --version --machine > build/validation/linux/flutter.json
           python -c 'import json; assert json.load(open("build/validation/linux/flutter.json"))["frameworkRevision"] == "ab2912035e160d9cad6306df307576da6128ebdb"'
-          grep -q 'flutter_rust_bridge = "=2.13.0"' rust/Cargo.toml
+          grep -Eq 'flutter_rust_bridge[[:space:]]*=[[:space:]]*("=2\.13\.0"|\{[^}]*version[[:space:]]*=[[:space:]]*"=2\.13\.0")' rust/Cargo.toml
           flutter precache --linux
           flutter pub get --enforce-lockfile
           # SDK migration adds an analysis exclusion; preserve committed source.
